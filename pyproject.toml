@@ -1,0 +1,23 @@
+[project]
+name = "mousai"
+version = "0.1.0"
+description = "Harmonic balance solvers"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "numpy>=1.12.0",
+    "scipy>=0.18.0",
+    "matplotlib>=2.0.0",
+    "sphinx>1.6.0",
+    "ipython>-5.8.0"
+]
+
+[dependency-groups]
+dev = [
+    "nbsphinx>=0.9.8",
+    "numpydoc>=1.10.0",
+]
+
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
