@@ -7,17 +7,12 @@ import scipy.linalg as la
 def solmf(x, v, M, C, K, F):
     r"""Return acceleration of second order linear matrix system.
 
-    Parameters
-    ----------
-    x, v, F : array_like
-        :math:`n\times 1` arrays of current displacement, velocity, and Force.
-    M, C, K : array_like
-        Mass, damping, and stiffness matrices.
+    Args:
+        x, v, F (array_like): :math:`n\times 1` arrays of current displacement, velocity, and Force.
+        M, C, K (array_like): Mass, damping, and stiffness matrices.
 
-    Returns
-    -------
-    a : array_like
-        :math:`n\\times 1` acceleration vector
+    Returns:
+        a (array_like): :math:`n\\times 1` acceleration vector
 
     Examples
     --------
@@ -38,7 +33,15 @@ def solmf(x, v, M, C, K, F):
 
 
 def duff_osc(x, v, params):
-    """Duffing oscillator acceleration."""
+    """Duffing oscillator acceleration.
+
+    Args:
+        x, v (array_like): State vectors.
+        params (dict): Parameter dictionary containing 'omega' and 'cur_time'.
+
+    Returns:
+        acceleration (array_like): Acceleration vector.
+    """
     omega = params["omega"]
     t = params["cur_time"]
     acceleration = np.array([[-x - 0.1 * x**3.0 - 0.2 * v + np.sin(omega * t)]])

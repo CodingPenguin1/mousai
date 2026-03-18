@@ -7,20 +7,15 @@ import scipy.fftpack as fftp
 def harmonic_deriv(omega, r):
     r"""Return derivative of a harmonic function using frequency methods.
 
-    Parameters
-    ----------
-    omega: float
-        Fundamendal frequency, in rad/sec, of repeating signal
-    r: array_like
-        | Array of rows of time histories to take the derivative of.
-        | The 1 axis (each row) corresponds to a time history.
-        | The length of the time histories *must be an odd integer*.
+    Args:
+        omega (float): Fundamendal frequency, in rad/sec, of repeating signal
+        r (array_like): | Array of rows of time histories to take the derivative of.
+            | The 1 axis (each row) corresponds to a time history.
+            | The length of the time histories *must be an odd integer*.
 
-    Returns
-    -------
-    s: array_like
-        Function derivatives.
-        The 1 axis (each row) corresponds to a time history.
+    Returns:
+        s (array_like): Function derivatives.
+            The 1 axis (each row) corresponds to a time history.
 
     Examples
     --------
@@ -55,25 +50,17 @@ def time_history(t, x, num_time_points=200, realify=True):
     actually a continuous one. This function fills in the gaps using the
     harmonics obtained in the solution.
 
-    Parameters
-    ----------
-    t: array_like
-        1 x m array where m is the number of
-        values representing the repeating solution.
-    x: array_like
-        n x m array where m is the number of equations and m is the number of
-        values representing the repeating solution.
-    realify: boolean
-        Force the returned results to be real.
-    num_time_points: int
-        number of points desired in the "smooth" time history.
+    Args:
+        t (array_like): 1 x m array where m is the number of
+            values representing the repeating solution.
+        x (array_like): n x m array where m is the number of equations and m is the number of
+            values representing the repeating solution.
+        num_time_points (int, optional): number of points desired in the "smooth" time history. Defaults to 200.
+        realify (boolean, optional): Force the returned results to be real. Defaults to True.
 
-    Returns
-    -------
-    t: array_like
-        1 x num_time_points array.
-    x: array_like
-        n x num_time_points array.
+    Returns:
+        t (array_like): 1 x num_time_points array.
+        x (array_like): n x num_time_points array.
 
     Examples
     --------
@@ -110,7 +97,15 @@ def time_history(t, x, num_time_points=200, realify=True):
 
 
 def condense_fft(X_full, num_harmonics):
-    """Create equivalent amplitude reduced-size FFT from longer FFT."""
+    """Create equivalent amplitude reduced-size FFT from longer FFT.
+
+    Args:
+        X_full (array_like): Full size FFT.
+        num_harmonics (int): Number of harmonics to keep.
+
+    Returns:
+        X_red (array_like): Condensed FFT.
+    """
     X_red = (
         np.hstack((X_full[:, 0 : (num_harmonics + 1)], X_full[:, -1 : -(num_harmonics + 1) : -1]))
         * (2 * num_harmonics + 1)
@@ -120,14 +115,30 @@ def condense_fft(X_full, num_harmonics):
 
 
 def condense_rfft(X_full, num_harmonics):
-    """Return real fft with fewer harmonics."""
+    """Return real fft with fewer harmonics.
+
+    Args:
+        X_full (array_like): Full size real FFT.
+        num_harmonics (int): Number of harmonics to keep.
+
+    Returns:
+        X_red (array_like): Condensed real FFT.
+    """
     X_len = X_full.shape[1]
     X_red = X_full[:, : (num_harmonics) * 2 + 1] / X_len * (1 + 2 * num_harmonics)
     return X_red
 
 
 def expand_rfft(X, num_harmonics):
-    """Return real fft with mor harmonics."""
+    """Return real fft with mor harmonics.
+
+    Args:
+        X (array_like): Real FFT.
+        num_harmonics (int): Number of harmonics desired.
+
+    Returns:
+        X_expanded (array_like): Expanded real FFT.
+    """
     X_len = X.shape[1]
     cur_num_harmonics = (X_len - 1) / 2
     X_expanded = np.hstack(
@@ -140,13 +151,27 @@ def expand_rfft(X, num_harmonics):
 
 
 def rfft_to_fft(X_real):
-    """Switch from SciPy real fft form to complex fft form."""
+    """Switch from SciPy real fft form to complex fft form.
+
+    Args:
+        X_real (array_like): Real FFT.
+
+    Returns:
+        X (array_like): Complex FFT.
+    """
     X = fftp.fft(fftp.irfft(X_real))
     return X
 
 
 def fft_to_rfft(X):
-    """Switch from complex form fft form to SciPy rfft form."""
+    """Switch from complex form fft form to SciPy rfft form.
+
+    Args:
+        X (array_like): Complex FFT.
+
+    Returns:
+        X_real (array_like): Real FFT.
+    """
     X_real = fftp.rfft(np.real(fftp.ifft(X)))
     return X_real
 
@@ -160,25 +185,17 @@ def time_history_r(t, x, num_time_points=200, realify=True):
     actually a continuous one. This function fills in the gaps using the
     harmonics obtained in the solution.
 
-    Parameters
-    ----------
-    t: array_like
-        1 x m array where m is the number of
-        values representing the repeating solution.
-    x: array_like
-        n x m array where m is the number of equations and m is the number of
-        values representing the repeating solution.
-    realify: boolean
-        Force the returned results to be real.
-    num_time_points: int
-        number of points desired in the "smooth" time history.
+    Args:
+        t (array_like): 1 x m array where m is the number of
+            values representing the repeating solution.
+        x (array_like): n x m array where m is the number of equations and m is the number of
+            values representing the repeating solution.
+        num_time_points (int, optional): number of points desired in the "smooth" time history. Defaults to 200.
+        realify (boolean, optional): Force the returned results to be real. Defaults to True.
 
-    Returns
-    -------
-    t: array_like
-        1 x num_time_points array.
-    x: array_like
-        n x num_time_points array.
+    Returns:
+        t (array_like): 1 x num_time_points array.
+        x (array_like): n x num_time_points array.
 
     Examples
     --------

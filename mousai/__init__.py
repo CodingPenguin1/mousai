@@ -39,6 +39,7 @@ from .adapters import *
 from .models import *
 from .solvers import *
 from .spectral import *
+from .classes import *
 
 # Accomodate using Travis-ci and potential matlotlib results.
 if 'pytest' in sys.argv[0]:

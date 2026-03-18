@@ -16,16 +16,12 @@ def function_to_mousai(sdfunc):
     inspect package to determine the form of the function being used and to
     wrap it in Mousai form.
 
-    Parameters
-    ----------
-    sdfunc : function
-        function in SciPy integrator form (`odeint`_ or `solve_ivp`_)
+    Args:
+        sdfunc (function): function in SciPy integrator form (`odeint`_ or `solve_ivp`_)
 
-    Returns
-    -------
-    new_function : function
-        function in Mousai form (accepting inputs like a standard Mousai
-        function)
+    Returns:
+        new_function (function): function in Mousai form (accepting inputs like a standard Mousai
+            function)
 
     Notes
     -----
@@ -48,25 +44,25 @@ def function_to_mousai(sdfunc):
         if call_parameters[0] == "t" or call_parameters[0] == "time":
             # t and x must be swapped, params available in over-scope
             def newfunction(x, t, params={}):
-                for k, v in params.items():
-                    exec("%s = %s" % (k, v))
                 return sdfunc(t, x)
         else:  # params available in overscope
 
             def newfunction(x, t, params={}):
-                for k, v in params.items():
-                    exec("%s = %s" % (k, v))
                 return sdfunc(x, t)
     else:
         if call_parameters[0] == "t" or call_parameters[0] == "time":
             # t and x must be swapped, params available in over-scope
             def newfunction(x, t, params={}):
-                other_params = [params[x] for x in call_parameters]
+                # Extract arguments from params based on sdfunc signature
+                # skipping the first two (t, x)
+                other_params = [params[k] for k in call_parameters[2:]]
                 return sdfunc(t, x, *other_params)
         else:  # params available in overscope
 
             def newfunction(x, t, params={}):
-                other_params = [params[x] for x in call_parameters]
+                # Extract arguments from params based on sdfunc signature
+                # skipping the first two (x, t)
+                other_params = [params[k] for k in call_parameters[2:]]
                 return sdfunc(x, t, *other_params)
 
     return newfunction
@@ -80,15 +76,11 @@ def old_mousai_to_new_mousai(function):
     functions. To act more as expected, the standard from 0.4.0 on will take
     the form `sdfunc(x, t, params)`.
 
-    Parameters
-    ----------
-    sdfunc : function
-        function in old Mousai form. `sdfunc(y, params)`
+    Args:
+        function (function): function in old Mousai form. `sdfunc(y, params)`
 
-    Returns
-    -------
-    new_sdfunc : function
-        function in new Mousai form. `sdfunc(y, t, params)`
+    Returns:
+        new_sdfunc (function): function in new Mousai form. `sdfunc(y, t, params)`
 
     Notes
     -----
@@ -110,17 +102,12 @@ def old_mousai_to_new_mousai(function):
 def mousai_to_solve_ivp(sdfunc, params):
     """Return function callable from solve_ivp given Mousai sdfunc.
 
-    Parameters
-    ----------
-    sdfunc : function
-        Mousai-style function returning state derivatives.
-    params : dictionary
-        dictionary of parameters used by `sdfunc`.
+    Args:
+        sdfunc (function): Mousai-style function returning state derivatives.
+        params (dictionary): dictionary of parameters used by `sdfunc`.
 
-    Returns
-    -------
-    solve_ivp_function : function
-        function ordered to work with `solve_ivp`_
+    Returns:
+        solve_ivp_function (function): function ordered to work with `solve_ivp`_
 
     Notes
     -----
@@ -153,17 +140,12 @@ def mousai_to_solve_ivp(sdfunc, params):
 def mousai_to_odeint(sdfunc, params):
     """Return function callable from solve_ivp given Mousai a sdfunc.
 
-    Parameters
-    ----------
-    sdfunc : function
-        Mousai-style function returning state derivatives.
-    params : dictionary
-        dictionary of parameters used by `sdfunc`.
+    Args:
+        sdfunc (function): Mousai-style function returning state derivatives.
+        params (dictionary): dictionary of parameters used by `sdfunc`.
 
-    Returns
-    -------
-    odeint_function : function
-        function ordered to work with `odeint`_
+    Returns:
+        odeint_function (function): function ordered to work with `odeint`_
 
     Notes
     -----
