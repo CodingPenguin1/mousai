@@ -32,9 +32,13 @@ __copyright__ = 'Copyright 2017 Joseph C. Slater'
 # __package__ = 'mousai'
 
 import sys
+
 import matplotlib as mpl
 
-from .har_bal import *
+from .adapters import *
+from .models import *
+from .solvers import *
+from .spectral import *
 
 # Accomodate using Travis-ci and potential matlotlib results.
 if 'pytest' in sys.argv[0]:
