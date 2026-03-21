@@ -4,7 +4,9 @@ from typing import Any, Callable, Literal
 
 import numpy as np
 
-from .solvers import EquationForm, HarmonicBalanceSolution, SolverMethod, hb_freq, hb_time
+from .common import EquationForm, HarmonicBalanceSolution, SolverMethod
+from .hb_freq import hb_freq
+from .hb_time import hb_time
 
 
 class HarmonicBalance:

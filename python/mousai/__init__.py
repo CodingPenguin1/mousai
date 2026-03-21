@@ -31,13 +31,11 @@ __copyright__ = "Copyright 2017 Joseph C. Slater"
 # __name__ = 'mousai'
 # __package__ = 'mousai'
 
-import sys
 
 # import matplotlib as mpl
 from .adapters import *
-from .classes import *
 from .models import *
-from .solvers import hb_freq, hb_time
+from .solvers import HarmonicBalance, hb_freq, hb_time
 from .spectral import *
 
 # Accomodate using Travis-ci and potential matlotlib results.
