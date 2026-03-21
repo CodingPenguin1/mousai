@@ -6,7 +6,13 @@ import scipy.fftpack as fftp
 
 from mousai.spectral import harmonic_deriv
 
-from .common import _SOLVERS, EquationForm, HarmonicBalanceSolution, SolverMethod
+from .common import (
+    _SOLVERS,
+    EquationForm,
+    HarmonicBalanceSolution,
+    SolverMethod,
+    _prepare_hb_inputs,
+)
 
 log = logging.getLogger(__name__)
 
@@ -146,65 +152,7 @@ def hb_time(
     arguments) identical to those available to the nonlinear solver.
     """
     # --- Input Validation and Initialization ---
-    # Ensure a parameter dictionary exists.
-    if params is None:
-        params = {}
-
-    # Basic sanity checks for user inputs.
-    if num_harmonics < 0:
-        raise ValueError("'num_harmonics' must be non-negative.")
-
-    if omega <= 0:
-        raise ValueError("'omega' must be positive.")
-
-    # The core of the harmonic balance method is solving for the time history `x(t)`
-    # that satisfies the differential equation. This section prepares the initial
-    # guess for that time history, `x0`.
-    if x0 is None:
-        # If no initial guess is provided, we must be told how many variables
-        # (i.e., equations) there are.
-        if num_variables is None:
-            raise ValueError("Either 'x0' or 'num_variables' must be provided.")
-        if num_variables <= 0:
-            raise ValueError("'num_variables' must be positive.")
-        # Create a zero-valued initial guess with the correct shape. The number of
-        # columns is the number of time steps, which is determined by the number of harmonics.
-        log.info("No initial guess 'x0' provided. Using zeros.")
-        x0 = np.zeros((num_variables, 1 + num_harmonics * 2))
-    else:
-        if num_variables is None:
-            num_variables = x0.shape[0]
-        elif num_variables != x0.shape[0]:
-            raise ValueError(
-                f"'num_variables' ({num_variables}) does not match the "
-                f"number of rows in 'x0' ({x0.shape[0]})."
-            )
-
-        # The number of time steps must be 2*num_harmonics + 1 to uniquely
-        # determine the Fourier coefficients up to that harmonic.
-        required_timesteps = 1 + 2 * num_harmonics
-
-        # If the provided x0 has too few time steps for the requested number of
-        # harmonics, we expand it.
-        if x0.shape[1] < required_timesteps:
-            log.info("Expanding 'x0' to accommodate %d harmonics.", num_harmonics)
-            # This is done by taking the FFT, padding with zeros in the middle
-            # of the spectrum (for higher harmonics), and then inverse FFTing.
-            x_freq = fftp.fft(x0)
-            x_zeros = np.zeros((x0.shape[0], required_timesteps - x0.shape[1]))
-            x_freq = np.insert(x_freq, [x0.shape[1] - x0.shape[1] // 2], x_zeros, axis=1)
-            x0 = fftp.ifft(x_freq) * required_timesteps / x0.shape[1]
-            x0 = np.real(x0)
-        elif x0.shape[1] > required_timesteps:
-            # If x0 has too many time steps, we truncate it.
-            log.warning(
-                "'x0' has more time steps (%d) than required for %d "
-                "harmonics (%d). Truncating 'x0'.",
-                x0.shape[1],
-                num_harmonics,
-                required_timesteps,
-            )
-            x0 = x0[:, :required_timesteps]
+    x0, num_variables, params = _prepare_hb_inputs(omega, num_harmonics, x0, num_variables, params)
 
     # --- Harmonic Balance Error Function Definition ---
     def hb_err(x: np.ndarray) -> np.ndarray:

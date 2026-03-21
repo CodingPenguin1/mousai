@@ -1,5 +1,4 @@
 import logging
-import warnings
 from typing import Any, Callable
 
 import numpy as np
@@ -7,7 +6,13 @@ import scipy.fftpack as fftp
 
 from mousai.spectral import condense_rfft, harmonic_deriv, time_history
 
-from .common import _SOLVERS, EquationForm, HarmonicBalanceSolution, SolverMethod
+from .common import (
+    _SOLVERS,
+    EquationForm,
+    HarmonicBalanceSolution,
+    SolverMethod,
+    _prepare_hb_inputs,
+)
 
 log = logging.getLogger(__name__)
 
@@ -16,98 +21,55 @@ def hb_freq(
     sdfunc: Callable[..., np.ndarray],
     x0: np.ndarray | None = None,
     omega: float = 1,
-    method: SolverMethod = "newton_krylov",
     num_harmonics: int = 1,
-    num_variables: int | None = None,
-    mask_constant: bool = True,
-    eqform: EquationForm = "second_order",
     params: dict[str, Any] | None = None,
+    eqform: EquationForm = "second_order",
+    num_time_steps: int | None = None,
+    mask_constant: bool = True,
+    method: SolverMethod = "newton_krylov",
+    num_variables: int | None = None,
     realify: bool = True,
-    num_time_steps: int = 51,
     **kwargs: Any,
 ) -> HarmonicBalanceSolution:
     r"""Harmonic balance solver for first and second order ODEs.
 
     Obtains the solution of a first-order and second-order differential
-    equation under the presumption that the solution is harmonic using an
-    algebraic time method.
-
-    Returns `t` (time), `x` (displacement), `v` (velocity), and `a`
-    (acceleration) response of a first or second order linear ordinary
-    differential equation defined by
-    :math:`\ddot{\mathbf{x}}=f(\mathbf{x},\mathbf{v},\omega)` or
-    :math:`\dot{\mathbf{x}}=f(\mathbf{x},\omega)`.
-
-    For the state space form, the function `sdfunc` should have the form::
-
-        def duff_osc_ss(x, params):  # params is a dictionary of parameters
-            omega = params['omega']  # `omega` will be put into the dictionary
-                                     # for you
-            t = params['cur_time']   # The time value is available as
-                                     # `cur_time` in the dictionary
-            x_dot = np.array([[x[1]],
-                              [-x[0]-.1*x[0]**3-.1*x[1]+1*np.sin(omega*t)]])
-            return x_dot
-
-    In a state space form solution, the function must take the states and the
-    `params` dictionary. This dictionary should be used to obtain the
-    prescribed response frequency and the current time. These plus any other
-    parameters are used to calculate the state derivatives which are returned
-    by the function.
-
-    For the second order form the function `sdfunc` should have the form::
-
-        def duff_osc(x, v, params):  # params is a dictionary of parameters
-            omega = params['omega']  # `omega` will be put into the dictionary
-                                     # for you
-            t = params['cur_time']   # The time value is available as
-                                     # `cur_time` in the dictionary
-            return np.array([[-x-.1*x**3-.2*v+np.sin(omega*t)]])
-
-    In a second-order form solution the function must take the states and the
-    `params` dictionary. This dictionary should be used to obtain the
-    prescribed response frequency and the current time. These plus any other
-    parameters are used to calculate the state derivatives which are returned
-    by the function.
+    equation under the presumption that the solution is harmonic using a
+    frequency-domain algebraic method.
 
     Args:
         sdfunc (function): For `eqform='first_order'`, name of function that returns **column
             vector** first derivative given `x`, and a dictionry of parameters.
             This is *NOT* a string (not the name of the function).
-
             :math:`\dot{\mathbf{x}}=f(\mathbf{x},\omega)`
-
             For `eqform='second_order'`, name of function that returns **column
-            vector** second derivative given `x`, `v`, `omega` and \*\*kwargs. This
-            is *NOT* a string.
-
+            vector** second derivative given `x`, `v`, and a dictionary of
+            parameters.
             :math:`\ddot{\mathbf{x}}=f(\mathbf{x},\mathbf{v},\omega)`
         x0 (array_like, optional): n x m array where n is the number of equations and m is the number of
             values representing the repeating solution.
-            It is required that :math:`m = 1 + 2 num_{harmonics}`. (we will
-            generalize allowable default values later.)
+            It is required that :math:`m = 1 + 2 num_{harmonics}`. If not provided,
+            a zero-valued guess will be used.
         omega (float): assumed fundamental response frequency in radians per second. Defaults to 1.
+        num_harmonics (int, optional): Number of harmonics to presume. The `omega` = 0 constant term is
+            always presumed to exist. Defaults to 1.
+        params (dict, optional): Dictionary of parameters needed by sdfunc. Defaults to None.
+        eqform (str, optional): `second_order` or `first_order`. (`second order` is default). Defaults to 'second_order'.
+        num_time_steps (int, optional): number of time steps to use in intermediate time histories for derivative
+            calculations. A higher number increases accuracy at the cost of performance.
+            Defaults to max(51, 4 * num_harmonics + 1).
+        mask_constant (boolean, optional): If True, the DC (constant) term of the solution is not solved for
+            and is assumed to be zero. Defaults to True.
         method (str, optional): Name of optimization method to be used. Defaults to 'newton_krylov'.
-        num_harmonics (int, optional): Number of harmonics to presume. The `omega` = 0 constant term is always
-            presumed to exist. Minimum (and default) is 1. If num_harmonics*2+1
-            exceeds the number of columns of `x0` then `x0` will be expanded, using
-            Fourier analaysis, to include additional harmonics with the starting
-            presumption of zero values. Defaults to 1.
         num_variables (int, optional): Number of states for a state space model, or number of generalized
             dispacements for a second order form.
             If `x0` is defined, num_variables is inferred. An error will result if
             both `x0` and num_variables are left out of the function call.
             `num_variables` must be defined if `x0` is not. Defaults to None.
-        eqform (str, optional): `second_order` or `first_order`. (`second order` is default). Defaults to 'second_order'.
-        params (dict, optional): Dictionary of parameters needed by sdfunc. Defaults to None.
         realify (boolean, optional): Force the returned results to be real. Defaults to True.
-        mask_constant (boolean, optional): Force the constant term of the series representation to be zero. Defaults to True.
-        num_time_steps (int, optional): number of time steps to use in time histories for derivative
-            calculations. Defaults to 51.
         **kwargs: Other keyword arguments available to nonlinear solvers in
             `scipy.optimize.nonlin
             <https://docs.scipy.org/doc/scipy/reference/optimize.nonlin.html>`_.
-            See Notes.
 
     Returns:
         HarmonicBalanceSolution: A named tuple containing (t, x, e, amps, phases).
@@ -115,242 +77,144 @@ def hb_freq(
     Examples
     --------
     >>> import mousai as ms
-    >>> t, x, e, amps, phases = ms.hb_freq(ms.duff_osc,
-    ...                                    np.array([[0,1,-1]]),
-    ...                                    omega = 0.7)
+    >>> # Initial guess is a time history, like in hb_time
+    >>> x0 = np.array([[0, 1, -1]])
+    >>> t, x, e, amps, phases = ms.hb_freq(ms.duff_osc, x0, omega=0.7)
 
     Notes
     -----
-    .. seealso::
-
-       `hb_time`
-
-    Calls a linear algebra function from
-    `scipy.optimize.nonlin
-    <https://docs.scipy.org/doc/scipy/reference/optimize.nonlin.html>`_ with
-    `newton_krylov` as the default.
-
-    Evaluates the differential equation/s at evenly spaced points in time
-    defined by the user (default 51). Uses error in FFT of derivative
-    (acceeration or state equations) calculated based on:
-
-    1. governing equations
-    2. derivative of `x` (second derivative for state method)
-
-    Solver should gently "walk" solution up to get to nonlinearities for hard
-    nonlinearities.
-
-    Algorithm:
-        1. calls `hb_time_err` with x as the variable to solve for.
-        2. `hb_time_err` uses a Fourier representation of x to obtain
-           velocities (after an inverse FFT) then calls `sdfunc` to determine
-           accelerations.
-        3. Accelerations are also obtained using a Fourier representation of x
-        4. Error in the accelerations (or state derivatives) are the functional
-           error used by the nonlinear algebraic solver
-           (default `newton_krylov`) to be minimized by the solver.
-
-    Options to the nonlinear solvers can be passed in by \*\*kwargs.
-
+    This function solves for the Fourier coefficients of the solution directly.
+    It transforms the differential equation into a set of algebraic equations
+    in the frequency domain and solves them numerically.
     """
-    if params is None:
-        params = {}
-    # Initial conditions exist?
-    if x0 is None:
-        if num_variables is not None:
-            x0 = np.zeros((num_variables, 1 + num_harmonics * 2))
-            x0 = x0 + np.random.randn(*x0.shape)
-        else:
-            raise ValueError("Must either define number of variables or initial guess for x.")
-    elif num_harmonics is None:
-        num_harmonics = int((x0.shape[1] - 1) / 2)
-    elif 1 + 2 * num_harmonics > x0.shape[1]:
-        x_freq = fftp.fft(x0)
-        x_zeros = np.zeros((x0.shape[0], 1 + num_harmonics * 2 - x0.shape[1]))
-        x_freq = np.insert(x_freq, [x0.shape[1] - x0.shape[1] // 2], x_zeros, axis=1)
+    # --- Input Validation and Initialization ---
+    x0, num_variables, params = _prepare_hb_inputs(omega, num_harmonics, x0, num_variables, params)
 
-        x0 = fftp.ifft(x_freq) * (1 + num_harmonics * 2) / x0.shape[1]
-        x0 = np.real(x0)
-    params["function"] = sdfunc  # function that returns SO derivative
-    time = np.linspace(0, 2 * np.pi / omega, num=x0.shape[1], endpoint=False)
-    params["time"] = time
-    params["omega"] = omega
-    params["n_har"] = num_harmonics
+    if num_time_steps is None:
+        # Set a default number of time steps for intermediate calculations.
+        # This should be higher than the Nyquist rate for the harmonics.
+        num_time_steps = max(51, 4 * num_harmonics + 1)
+    elif num_time_steps <= 2 * num_harmonics:
+        raise ValueError(
+            f"'num_time_steps' ({num_time_steps}) must be greater than "
+            f"2 * num_harmonics ({2 * num_harmonics}) to avoid aliasing."
+        )
 
+    # Convert time-domain guess to frequency domain coefficients
     X0 = fftp.rfft(x0)
-    if mask_constant is True:
+    if mask_constant:
         X0 = X0[:, 1:]
 
-    params["mask_constant"] = mask_constant
-
+    # --- Harmonic Balance Error Function Definition (Closure) ---
     def hb_err(X: np.ndarray) -> np.ndarray:
-        """Return errors in equation eval versus derivative calculation.
+        """
+        Calculate the harmonic balance error in the frequency domain.
+
+        This closure takes the Fourier coefficients of the guess, reconstructs
+        the time-domain signal, evaluates the governing equations, and returns
+        the error in the frequency domain.
 
         Args:
-            X (array_like): Fourier coefficients.
+            X: Fourier coefficients (possibly lacking DC term if masked).
 
+        Returns:
+            The frequency-domain error for the current guess.
         """
-        # r"""Array (vector) of hamonic balance second order algebraic errors.
-        #
-        # Given a set of second order equations
-        # :math:`\ddot{x} = f(x, \dot{x}, \omega, t)`
-        # calculate the error :math:`E = \mathcal{F}(\ddot{x}
-        # - \mathcal{F}\left(f(x, \dot{x}, \omega, t)\right)`
-        # presuming that :math:`x` can be represented as a Fourier series, and
-        # thus :math:`\dot{x}` and :math:`\ddot{x}` can be obtained from the
-        # Fourier series representation of :math:`x` and :math:`\mathcal{F}(x)`
-        # represents the Fourier series of :math:`x(t)`
-        #
-        # Parameters
-        # ----------
-        # X : float array
-        #     X is an :math:`n \\times m` by 1 array of sp.fft.rfft
-        #     fft coefficients lacking the constant (first) element.
-        #     Here :math:`n` is the number of displacements and :math:`m` 2
-        #     times the number of harmonics to be solved for.
-        #
-        # **kwargs : string, float, variable
-        #     **kwargs is a packed set of keyword arguments with 3 required
-        #     arguments.
-        #         1. `function`: a string name of the function which returned
-        #         the numerically calculated acceleration.
-        #
-        #         2. `omega`: which is the defined fundamental harmonic
-        #         at which the is desired.
-        #
-        #         3. `n_har`: an integer representing the number of harmonics.
-        #         Note that `m` above is equal to 2 * `n_har`.
-        #
-        # Returns
-        # -------
-        # e : float array
-        #     2d array of numerical errors of presumed solution(s) `X`. Error
-        #     between first (or second) derivative via Fourier analysis and via
-        #     solution of the governing equation.
-        #
-        # Notes
-        # -----
-        # `function` and `omega` are not separately defined arguments so as to
-        # enable algebraic solver functions to call `hb_err` cleanly.
-        #
-        # The algorithm is as follows:
-        #     1. X is prepended with a zero vector (to represent the constant
-        #        value)
-        #     2. `x` is calculated via an inverse `numpy.fft.rfft`
-        #     1. The velocity and accelerations are calculated in the same
-        #        shape as `x` as `vel` and `accel`.
-        #     3. Each column of `x` and `v` are sent with `t`, `omega`, and
-        #        other `**kwargs** to `function` one at a time with the results
-        #        agregated into the columns of `accel_num`.
-        #     4. The rfft is taken of `accel_num` and `accel`.
-        #     5. The first column is stripped out of both `accel_num_freq and
-        #        `accel_freq`.
+        # If the DC term was masked, prepend a zero coefficient column.
+        if mask_constant:
+            X_full = np.hstack((np.zeros((X.shape[0], 1)), X))
+        else:
+            X_full = X
 
-        # """
-        nonlocal params  # Will stay out of global/conflicts
-        omega = params["omega"]
-        time = params["time"]
-        mask_constant = params["mask_constant"]
-        if mask_constant is True:
-            X = np.hstack((np.zeros_like(X[:, 0]).reshape(-1, 1), X))
+        # Reconstruct time history from coefficients
+        x = fftp.irfft(X_full)
+        # Create a finer time mesh for accurate nonlinear evaluation
+        time_base = np.linspace(0, 2 * np.pi / omega, num=x.shape[1], endpoint=False)
+        time_e, x = time_history(time_base, x, num_time_points=num_time_steps)
 
-        x = fftp.irfft(X)
-        time_e, x = time_history(time, x, num_time_points=num_time_steps)
-
+        # Calculate derivatives in the time domain
         vel = harmonic_deriv(omega, x)
 
-        m = num_time_steps
+        local_params = params.copy()
+        local_params["omega"] = omega
 
+        # Calculate derivatives from the governing equations
         if eqform == "second_order":
             accel = harmonic_deriv(omega, vel)
             accel_from_deriv = np.zeros_like(accel)
 
-            # Should subtract in place below to save memory for large problems
-            for i in np.arange(m):
-                # This should enable t to be used for current time in loops
-                # might be able to be commented out, left as example
-                # t = time_e[i]
-                params["cur_time"] = time_e[i]  # loops
-                # Note that everything in params can be accessed within
-                # `function`.
-                accel_from_deriv[:, i] = params["function"](x[:, i], vel[:, i], params)[:, 0]
-            e = accel_from_deriv - accel  # /np.max(np.abs(accel))
-
-            states = accel
-
+            for i in range(num_time_steps):
+                local_params["cur_time"] = time_e[i]
+                accel_from_deriv[:, i] = sdfunc(x[:, i], vel[:, i], local_params)[:, 0]
+            e_time = accel_from_deriv - accel
         elif eqform == "first_order":
             vel_from_deriv = np.zeros_like(vel)
-            # Should subtract in place below to save memory for large problems
-            for i in np.arange(m):
-                # This should enable t to be used for current time in loops
-                # t = time_e[i]
-                params["cur_time"] = time_e[i]
-                # Note that everything in params can be accessed within
-                # `function`.
-                vel_from_deriv[:, i] = params["function"](x[:, i], params)[:, 0]
-
-            e = vel_from_deriv - vel  # /np.max(np.abs(vel))
-
-            states = vel
+            for i in range(num_time_steps):
+                local_params["cur_time"] = time_e[i]
+                vel_from_deriv[:, i] = sdfunc(x[:, i], local_params)[:, 0]
+            e_time = vel_from_deriv - vel
         else:
             raise ValueError(f"eqform cannot have a value of '{eqform}'")
 
-        states_fft = fftp.rfft(states)
-
-        e_fft = fftp.rfft(e)
-
-        states_fft_condensed = condense_rfft(states_fft, num_harmonics)
-
+        # Transform error back to frequency domain
+        e_fft = fftp.rfft(e_time)
+        # Condense error to match the number of harmonics being solved
         e = condense_rfft(e_fft, num_harmonics)
 
-        if mask_constant is True:
+        if mask_constant:
             e = e[:, 1:]
 
-        e = e / np.max(np.abs(states_fft_condensed))
         return e
 
+    # --- Setup for Solver ---
+    # We only need to define `time` here for the initial guess structure if needed,
+    # but `hb_err` generates its own time vector.
+
+    # --- Invoke the Nonlinear Solver ---
     solver = _SOLVERS.get(method)
     if not solver:
         raise ValueError(
             f"Unknown solver '{method}'. Available solvers are: {list(_SOLVERS.keys())}"
         )
+
+    log.info("Starting harmonic balance solver '%s' for omega=%.4f", method, omega)
     try:
         X = solver(hb_err, X0, **kwargs)
-        e = hb_err(X)
-        if mask_constant is True:
-            X = np.hstack((np.zeros_like(X[:, 0]).reshape(-1, 1), X))
-        amps = np.sqrt(X[:, 1] ** 2 + X[:, 2] ** 2) * 2 / X.shape[1]
-        phases = np.arctan2(X[:, 1], -X[:, 2])
-    except:  # Catches and raises errors- needs actual error listed.
-        print("Excepted- search failed for omega = {:6.4f} rad/s.".format(omega))
-        print("""What ever error this is, please put into har_bal
-               after the excepts (2 of them)""")
-        X = X0
-        print(mask_constant)
-        e = hb_err(X)
-        if mask_constant is True:
-            X = np.hstack((np.zeros_like(X[:, 0]).reshape(-1, 1), X))
-        amps = np.sqrt(X[:, 1] ** 2 + X[:, 2] ** 2) * 2 / X.shape[1]
-        phases = np.arctan2(X[:, 1], -X[:, 2])
+    except Exception as e:
+        log.error(
+            "The '%s' solver failed to converge for omega=%.4f.",
+            method,
+            omega,
+            exc_info=True,
+        )
+        raise RuntimeError(
+            f"The '{method}' solver failed to converge for omega={omega:.4f}."
+        ) from e
 
-        raise
+    log.info("Solver '%s' converged.", method)
 
-    x = fftp.irfft(X)
-
-    if realify is True:
-        x = np.real(x)
+    # --- Post-process the Solution ---
+    if mask_constant:
+        X_full = np.hstack((np.zeros((X.shape[0], 1)), X))
     else:
-        print("x was real")
+        X_full = X
+
+    # Reconstruct final time history
+    x = fftp.irfft(X_full)
+    e = hb_err(X)
+    time = np.linspace(0, 2 * np.pi / omega, num=x.shape[1], endpoint=False)
+
+    # Calculate amplitudes and phases.
+    # For scipy.fftpack.rfft, index 1 is Re(1st), index 2 is Im(1st).
+    # X_full shape is (n_vars, 1 + 2*n_harmonics).
+    if X_full.shape[1] > 2:
+        amps = np.sqrt(X_full[:, 1] ** 2 + X_full[:, 2] ** 2) * 2 / X_full.shape[1]
+        phases = np.arctan2(X_full[:, 1], -X_full[:, 2])
+    else:
+        amps = np.zeros(X.shape[0])
+        phases = np.zeros(X.shape[0])
+
+    if realify:
+        x = np.real(x)
+
     return HarmonicBalanceSolution(time, x, e, amps, phases)
-
-
-def hb_so(sdfunc: Callable[..., np.ndarray], **kwargs: Any) -> HarmonicBalanceSolution:
-    """Deprecated function name. Use hb_time.
-
-    Args:
-        sdfunc (function): Function for state derivatives.
-        **kwargs: Keyword arguments for hb_time.
-    """
-    message = "hb_so is deprecated. Please use hb_time or an alternative."
-    warnings.warn(message, DeprecationWarning)
-    return hb_time(sdfunc, **kwargs)
