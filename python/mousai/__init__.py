@@ -18,33 +18,32 @@ Copyright (c) Joseph C. Slater
 Distributed under the terms of the BSD-3-Clause License.
 """
 
-__title__ = 'mousai'
+__title__ = "mousai"
 # 1) Version may have other than numerical digits after decimal point.
 # 2) 1.11 is actually a higher release than 1.2 (confusing).
 # 3) Let's just increment with single digits.
 
 # Moved to Semantic Versioning. 0.3 was last non-semantic release.
-__version__ = '0.3.1'
-__author__ = 'Joseph C. Slater'
-__license__ = 'BSD-3-Clause'
-__copyright__ = 'Copyright 2017 Joseph C. Slater'
+__version__ = "0.3.1"
+__author__ = "Joseph C. Slater"
+__license__ = "BSD-3-Clause"
+__copyright__ = "Copyright 2017 Joseph C. Slater"
 # __name__ = 'mousai'
 # __package__ = 'mousai'
 
 import sys
 
-import matplotlib as mpl
-
+# import matplotlib as mpl
 from .adapters import *
-from .models import *
-from .solvers import *
-from .spectral import *
 from .classes import *
+from .models import *
+from .solvers import hb_freq, hb_time
+from .spectral import *
 
 # Accomodate using Travis-ci and potential matlotlib results.
-if 'pytest' in sys.argv[0]:
-    print('Setting backend to agg to run tests')
-    mpl.use('agg')
+# if "pytest" in sys.argv[0]:
+#     print("Setting backend to agg to run tests")
+#     mpl.use("agg")
 
 # This would have value for using
 # from mousai import *

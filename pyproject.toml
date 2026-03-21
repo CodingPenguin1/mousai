@@ -18,8 +18,12 @@ dependencies = [
 dev = [
     "nbsphinx>=0.9.8",
     "numpydoc>=1.10.0",
+    "pytest>=9.0.2",
 ]
 
 [build-system]
 requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["python"]

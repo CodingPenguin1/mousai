@@ -185,63 +185,13 @@ def hb_time(
 
     Options to the nonlinear solvers can be passed in by \*\*kwargs (keyword
     arguments) identical to those available to the nonlinear solver.
-
     """
-    # --- Input Validation and Initialization ---
-    if params is None:
-        params = {}
-
-    if num_harmonics < 0:
-        raise ValueError("'num_harmonics' must be non-negative.")
-
-    if omega <= 0:
-        raise ValueError("'omega' must be positive.")
-
-    # Determine initial guess x0, number of variables, and number of harmonics
-    if x0 is None:
-        if num_variables is None:
-            raise ValueError("Either 'x0' or 'num_variables' must be provided.")
-        if num_variables <= 0:
-            raise ValueError("'num_variables' must be positive.")
-        log.info("No initial guess 'x0' provided. Using zeros.")
-        x0 = np.zeros((num_variables, 1 + num_harmonics * 2))
-    else:
-        if num_variables is None:
-            num_variables = x0.shape[0]
-        elif num_variables != x0.shape[0]:
-            raise ValueError(
-                f"'num_variables' ({num_variables}) does not match the "
-                f"number of rows in 'x0' ({x0.shape[0]})."
-            )
-
-        required_timesteps = 1 + 2 * num_harmonics
-        if x0.shape[1] < required_timesteps:
-            log.info("Expanding 'x0' to accommodate %d harmonics.", num_harmonics)
-            x_freq = fftp.fft(x0)
-            x_zeros = np.zeros((x0.shape[0], required_timesteps - x0.shape[1]))
-            x_freq = np.insert(x_freq, [x0.shape[1] - x0.shape[1] // 2], x_zeros, axis=1)
-            x0 = fftp.ifft(x_freq) * required_timesteps / x0.shape[1]
-            x0 = np.real(x0)
-        elif x0.shape[1] > required_timesteps:
-            log.warning(
-                "'x0' has more time steps (%d) than required for %d "
-                "harmonics (%d). Truncating 'x0'.",
-                x0.shape[1],
-                num_harmonics,
-                required_timesteps,
-            )
-            x0 = x0[:, :required_timesteps]
-
-    # --- Setup for Harmonic Balance Error Function ---
-    params["function"] = sdfunc
-    time = np.linspace(0, 2 * np.pi / omega, num=x0.shape[1], endpoint=False)
-    params["time"] = time
-    params["omega"] = omega
-    params["n_har"] = num_harmonics
 
     # --- Harmonic Balance Error Function Definition ---
     def hb_err(x: np.ndarray) -> np.ndarray:
         r"""Array (vector) of hamonic balance second order algebraic errors.
+        """
+        Calculate the harmonic balance error in the time domain.
 
         Given a set of second order equations
         :math:`\ddot{x} = f(x, \dot{x}, \omega, t)`
@@ -249,6 +199,14 @@ def hb_time(
         presuming that :math:`x` can be represented as a Fourier series, and
         thus :math:`\dot{x}` and :math:`\ddot{x}` can be obtained from the
         Fourier series representation of :math:`x`.
+        This inner function is a closure, capturing variables like `omega`,
+        `num_harmonics`, `time`, `eqform`, `sdfunc`, and the user `params`
+        from the surrounding `hb_time` scope.
+
+        It computes the error between the derivatives calculated from the
+        governing equations (`sdfunc`) and the derivatives calculated from
+        the Fourier series of the current guess `x`. This error is what the
+        nonlinear solver attempts to minimize.
 
         Args:
             x (array_like): x is an :math:`n \\times m` by 1 array of presumed displacements.
@@ -256,6 +214,7 @@ def hb_time(
                 :math:`n` is the number of displacements and :math:`m` is the
                 number of times per cycle at which the displacement is guessed
                 (minimum of 3)
+            x: The current guess for the time history of the states.
 
         Because this function will be called by one of the scipy.optimize
         root finders, it must be a function of only `x`. However, for
@@ -275,11 +234,20 @@ def hb_time(
 
         Returns:
             e (array_like): 2d array of numerical error of presumed solution(s) `x`.
+            The time-domain error for the current guess `x`.
+        """
+        m = 1 + 2 * num_harmonics
+        vel = harmonic_deriv(omega, x)
 
         Notes
         -----
         `function` and `omega` are not separately defined arguments so as to
         enable algebraic solver functions to call `hb_time_err` cleanly.
+        # The user's `sdfunc` expects a `params` dictionary. We'll create a
+        # local copy of the user-provided dict and add solver-specific
+        # values to it for each time step.
+        local_params = params.copy()
+        local_params["omega"] = omega
 
         The algorithm is broadly as follows:
             1. The velocity or accelerations are calculated in the same shape
@@ -312,6 +280,14 @@ def hb_time(
                 # Note that everything in params can be accessed within
                 # `function`.
                 accel_from_deriv[:, i] = params["function"](x[:, i], vel[:, i], params)[:, 0]
+            for i in range(m):
+                local_params["cur_time"] = time[i]
+                # Call the user's function to get the derivative from the equation.
+                accel_from_deriv[:, i] = sdfunc(x[:, i], vel[:, i], local_params)[
+                    :, 0
+                ]
+            # The error is the difference between the derivative from the equation
+            # and the derivative from the Fourier series of the guess `x`.
             e = accel_from_deriv - accel
         elif eqform == "first_order":
             vel_from_deriv = np.zeros_like(vel)
@@ -323,13 +299,90 @@ def hb_time(
                 # Note that everything in params can be accessed within
                 # `function`.
                 vel_from_deriv[:, i] = params["function"](x[:, i], params)[:, 0]
+            for i in range(m):
+                local_params["cur_time"] = time[i]
+                vel_from_deriv[:, i] = sdfunc(x[:, i], local_params)[:, 0]
 
             e = vel_from_deriv - vel
         else:
             raise ValueError(f"eqform cannot have a value of '{eqform}'")
         return e
 
-    # --- Solver Invocation ---
+    # --- Input Validation and Initialization ---
+    # Ensure a parameter dictionary exists.
+    if params is None:
+        params = {}
+
+    # Basic sanity checks for user inputs.
+    if num_harmonics < 0:
+        raise ValueError("'num_harmonics' must be non-negative.")
+
+    if omega <= 0:
+        raise ValueError("'omega' must be positive.")
+
+    # The core of the harmonic balance method is solving for the time history `x(t)`
+    # that satisfies the differential equation. This section prepares the initial
+    # guess for that time history, `x0`.
+    if x0 is None:
+        # If no initial guess is provided, we must be told how many variables
+        # (i.e., equations) there are.
+        if num_variables is None:
+            raise ValueError("Either 'x0' or 'num_variables' must be provided.")
+        if num_variables <= 0:
+            raise ValueError("'num_variables' must be positive.")
+        # Create a zero-valued initial guess with the correct shape. The number of
+        # columns is the number of time steps, which is determined by the number of harmonics.
+        log.info("No initial guess 'x0' provided. Using zeros.")
+        x0 = np.zeros((num_variables, 1 + num_harmonics * 2))
+    else:
+        if num_variables is None:
+            num_variables = x0.shape[0]
+        elif num_variables != x0.shape[0]:
+            raise ValueError(
+                f"'num_variables' ({num_variables}) does not match the "
+                f"number of rows in 'x0' ({x0.shape[0]})."
+            )
+
+        # The number of time steps must be 2*num_harmonics + 1 to uniquely
+        # determine the Fourier coefficients up to that harmonic.
+        required_timesteps = 1 + 2 * num_harmonics
+
+        # If the provided x0 has too few time steps for the requested number of
+        # harmonics, we expand it.
+        if x0.shape[1] < required_timesteps:
+            log.info("Expanding 'x0' to accommodate %d harmonics.", num_harmonics)
+            # This is done by taking the FFT, padding with zeros in the middle
+            # of the spectrum (for higher harmonics), and then inverse FFTing.
+            x_freq = fftp.fft(x0)
+            x_zeros = np.zeros((x0.shape[0], required_timesteps - x0.shape[1]))
+            x_freq = np.insert(x_freq, [x0.shape[1] - x0.shape[1] // 2], x_zeros, axis=1)
+            x0 = fftp.ifft(x_freq) * required_timesteps / x0.shape[1]
+            x0 = np.real(x0)
+        elif x0.shape[1] > required_timesteps:
+            # If x0 has too many time steps, we truncate it.
+            log.warning(
+                "'x0' has more time steps (%d) than required for %d "
+                "harmonics (%d). Truncating 'x0'.",
+                x0.shape[1],
+                num_harmonics,
+                required_timesteps,
+            )
+            x0 = x0[:, :required_timesteps]
+
+    # --- Setup for Solver ---
+    # The `hb_err` function needs access to several variables from this scope.
+    # We pass them via the `params` dictionary, as this is a clean way to
+    # support the single-argument signature required by scipy's solvers.
+    params["function"] = sdfunc
+    # The `hb_err` function (defined above) is a closure that captures the
+    # necessary variables from this scope. We only need to define `time` here.
+    time = np.linspace(0, 2 * np.pi / omega, num=x0.shape[1], endpoint=False)
+    params["time"] = time
+    params["omega"] = omega
+    params["n_har"] = num_harmonics
+
+    # --- Invoke the Nonlinear Solver ---
+    # Select the solver function based on the user's 'method' string.
     solver = _SOLVERS.get(method)
     if not solver:
         raise ValueError(
@@ -337,6 +390,9 @@ def hb_time(
         )
 
     log.info("Starting harmonic balance solver '%s' for omega=%.4f", method, omega)
+    # Call the solver. The solver will iteratively call `hb_err` with different
+    # trial solutions `x` until the error returned by `hb_err` is minimized
+    # (ideally, to zero).
     try:
         x = solver(hb_err, x0, **kwargs)
     except Exception as e:
@@ -352,10 +408,14 @@ def hb_time(
 
     log.info("Solver '%s' converged.", method)
 
-    # --- Post-processing ---
+    # --- Post-process the Solution ---
+    # Now that we have the solution `x`, we can calculate the final error
+    # and other useful quantities.
     e = hb_err(x)
     if x.shape[1] > 1:
+        # Calculate the Fourier transform of the solution to get amplitudes/phases.
         xhar = fftp.fft(x) * 2 / len(time)
+        # Extract amplitude and phase of the fundamental harmonic (index 1).
         amps = np.absolute(xhar[:, 1])
         phases = np.angle(xhar[:, 1])
     else:
@@ -363,8 +423,11 @@ def hb_time(
         phases = np.zeros(x.shape[0])
 
     if realify:
+        # The solution should be real-valued; discard any small imaginary part
+        # that may have arisen from numerical inaccuracies.
         x = np.real(x)
 
+    # Return the results in a structured format.
     return HarmonicBalanceSolution(time, x, e, amps, phases)
 
 

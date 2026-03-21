@@ -18,7 +18,7 @@ def read(fname):
     return open(os.path.join(os.path.dirname(__file__), fname)).read()
 
 
-with open('mousai/__init__.py', 'rb') as fid:
+with open('python/mousai/__init__.py', 'rb') as fid:
     for line in fid:
         line = line.decode('utf-8')
         if line.startswith('__version__'):
