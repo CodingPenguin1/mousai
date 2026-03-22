@@ -2,22 +2,33 @@
 name = "mousai"
 version = "0.1.0"
 description = "Harmonic balance solvers"
-readme = "README.md"
-requires-python = ">=3.12"
+readme = "README.rst"
+requires-python = ">=3.10"
 dependencies = [
-    "numpy>=1.12.0",
-    "scipy>=0.18.0",
-    "matplotlib>=2.0.0",
-    "sphinx>1.6.0",
-    "ipython>-5.8.0"
+    # "numpy>=1.12.0",
+    # "scipy>=0.18.0",
+    # "matplotlib>=2.0.0",
+    # "sphinx>1.6.0",
+    # "ipython>=5.8.0",
+    "numpy>=2.2.6",
+    "scipy>=1.15.3",
 ]
 
 [dependency-groups]
 dev = [
     "nbsphinx>=0.9.8",
     "numpydoc>=1.10.0",
+    "pytest>=9.0.2",
 ]
 
 [build-system]
 requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["python"]
+
+[tool.pytest.ini_options]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+]
